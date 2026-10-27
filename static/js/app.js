@@ -29,6 +29,22 @@ document.addEventListener('DOMContentLoaded', function () {
     const difficultySlider = document.getElementById('difficulty');
     const difficultyValue = document.getElementById('difficultyValue');
 
+    // Dark / Light Theme Toggle
+    const themeToggle = document.getElementById('themeToggle');
+    const storedTheme = localStorage.getItem('theme-preference');
+    const prefersLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+
+    if (storedTheme === 'light' || (!storedTheme && prefersLight)) {
+        document.body.classList.add('light-mode');
+    }
+
+    if (themeToggle) {
+        themeToggle.addEventListener('click', function () {
+            const isLight = document.body.classList.toggle('light-mode');
+            localStorage.setItem('theme-preference', isLight ? 'light' : 'dark');
+        });
+    }
+
     // Health check
     checkOllamaHealth();
 
@@ -105,6 +121,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 const testGroup = document.getElementById('testDetailsGroup');
                 if (testGroup) testGroup.style.display = (value === 'true') ? 'block' : 'none';
             }
+            saveFormToStorage();
         });
     });
 
@@ -145,11 +162,13 @@ document.addEventListener('DOMContentLoaded', function () {
             setPill('hasTest', 'true');
         }
         updateAttendanceBar();
+        saveFormToStorage();
     };
 
     function setPill(targetId, value) {
-        document.getElementById(targetId).value = value;
         const input = document.getElementById(targetId);
+        if (!input) return;
+        input.value = value;
         const container = input.previousElementSibling;
         if (container && container.classList.contains('pill-selector')) {
             container.querySelectorAll('.pill').forEach(b => {
@@ -161,6 +180,100 @@ document.addEventListener('DOMContentLoaded', function () {
             if (testGroup) testGroup.style.display = (value === 'true') ? 'block' : 'none';
         }
     }
+
+    // LocalStorage Form Persistence
+    const FORM_STORAGE_KEY = 'should_i_skip_form_data';
+
+    function saveFormToStorage() {
+        const classesRemainingInput = document.getElementById('classesRemaining');
+        const dayScheduleInput = document.getElementById('daySchedule');
+        const classTimeInput = document.getElementById('classTime');
+        const proxyStatusInput = document.getElementById('proxyStatus');
+        const courseCreditsInput = document.getElementById('courseCredits');
+        const hasTestInput = document.getElementById('hasTest');
+        const testDetailsInput = document.getElementById('testDetails');
+        const classTypeInput = document.getElementById('classType');
+        const gradeSituationInput = document.getElementById('gradeSituation');
+
+        const data = {
+            attendance: attendanceInput.value,
+            min_attendance: minAttendanceInput.value,
+            classes_remaining: classesRemainingInput ? classesRemainingInput.value : '',
+            teacher_strictness: strictnessSlider.value,
+            class_time: classTimeInput ? classTimeInput.value : '',
+            day_schedule: dayScheduleInput ? dayScheduleInput.value : '',
+            proxy_status: proxyStatusInput ? proxyStatusInput.value : '',
+            course_credits: courseCreditsInput ? courseCreditsInput.value : '',
+            has_test: hasTestInput ? hasTestInput.value : 'false',
+            test_details: testDetailsInput ? testDetailsInput.value : '',
+            class_type: classTypeInput ? classTypeInput.value : '',
+            difficulty: difficultySlider.value,
+            grade_situation: gradeSituationInput ? gradeSituationInput.value : ''
+        };
+
+        try {
+            localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(data));
+        } catch (e) {
+            console.warn('Unable to save to localStorage', e);
+        }
+    }
+
+    function loadFormFromStorage() {
+        try {
+            const saved = localStorage.getItem(FORM_STORAGE_KEY);
+            if (!saved) return;
+            const data = JSON.parse(saved);
+            if (!data || typeof data !== 'object') return;
+
+            if (data.attendance !== undefined && data.attendance !== '') {
+                attendanceInput.value = data.attendance;
+            }
+            if (data.min_attendance !== undefined && data.min_attendance !== '') {
+                minAttendanceInput.value = data.min_attendance;
+            }
+            if (data.classes_remaining !== undefined && data.classes_remaining !== '') {
+                const el = document.getElementById('classesRemaining');
+                if (el) el.value = data.classes_remaining;
+            }
+            if (data.teacher_strictness !== undefined && data.teacher_strictness !== '') {
+                strictnessSlider.value = data.teacher_strictness;
+                strictnessValue.textContent = data.teacher_strictness;
+            }
+            if (data.difficulty !== undefined && data.difficulty !== '') {
+                difficultySlider.value = data.difficulty;
+                difficultyValue.textContent = data.difficulty;
+            }
+            if (data.day_schedule !== undefined) {
+                const el = document.getElementById('daySchedule');
+                if (el) el.value = data.day_schedule;
+            }
+            if (data.class_time !== undefined) {
+                const el = document.getElementById('classTime');
+                if (el) el.value = data.class_time;
+            }
+            if (data.test_details !== undefined) {
+                const el = document.getElementById('testDetails');
+                if (el) el.value = data.test_details;
+            }
+
+            if (data.proxy_status) setPill('proxyStatus', data.proxy_status);
+            if (data.course_credits) setPill('courseCredits', data.course_credits);
+            if (data.class_type) setPill('classType', data.class_type);
+            if (data.has_test !== undefined) setPill('hasTest', String(data.has_test));
+            if (data.grade_situation) setPill('gradeSituation', data.grade_situation);
+
+            updateAttendanceBar();
+        } catch (e) {
+            console.warn('Unable to load from localStorage', e);
+        }
+    }
+
+    // Auto-save form inputs on changes
+    form.addEventListener('input', saveFormToStorage);
+    form.addEventListener('change', saveFormToStorage);
+
+    // Load any previously persisted schedule & attendance inputs
+    loadFormFromStorage();
 
     // Submit
     form.addEventListener('submit', async function (e) {

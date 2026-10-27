@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify
-import requests
+import httpx
 import json
 import os
 
@@ -86,30 +86,30 @@ def index():
 
 
 @app.route('/api/analyze', methods=['POST'])
-def analyze():
-    """Analyze whether the student should skip class using Gemma."""
-    data = request.json
+async def analyze():
+    """Analyze whether the student should skip class using Gemma asynchronously."""
+    data = request.get_json(silent=True) or {}
 
     system_prompt = build_system_prompt()
     user_prompt = build_user_prompt(data)
 
     try:
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": MODEL_NAME,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "stream": False,
-                "options": {
-                    "temperature": 0.7,
-                    "num_predict": 1024
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{OLLAMA_BASE_URL}/api/chat",
+                json={
+                    "model": MODEL_NAME,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.7,
+                        "num_predict": 1024
+                    }
                 }
-            },
-            timeout=120
-        )
+            )
 
         if response.status_code != 200:
             return jsonify({
@@ -146,11 +146,16 @@ def analyze():
                 }
             })
 
-    except requests.exceptions.ConnectionError:
+    except httpx.ConnectError:
         return jsonify({
             "error": "Cannot connect to Ollama. Please make sure Ollama is running.",
             "help": "Run 'ollama serve' in a terminal, then 'ollama pull gemma3:4b'"
         }), 503
+    except httpx.TimeoutException:
+        return jsonify({
+            "error": "Timed out waiting for response from Ollama.",
+            "help": "LLM generation took too long or Ollama is overloaded."
+        }), 504
     except Exception as e:
         return jsonify({
             "error": f"Unexpected error: {str(e)}"
@@ -158,10 +163,11 @@ def analyze():
 
 
 @app.route('/api/health', methods=['GET'])
-def health():
-    """Check if Ollama is running and Gemma model is available."""
+async def health():
+    """Check if Ollama is running and Gemma model is available asynchronously."""
     try:
-        response = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5)
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
         if response.status_code == 200:
             models = response.json().get('models', [])
             model_names = [m.get('name', '') for m in models]
